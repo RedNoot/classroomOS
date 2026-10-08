@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Shy Safari</title>
+    <meta
+      name="description"
+      content="A classroom noise monitor for the projector. Shy animals come out while the room stays calm. Music/Movie mode ignores what the computer is playing."
+    />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦒</text></svg>" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main id="app" data-scene="savanna">
+      <div id="backdrop" aria-hidden="true"></div>
+      <div id="stage" aria-live="polite"></div>
+      <div id="haze" aria-hidden="true"></div>
+
+      <!-- Top bar -->
+      <div class="bar top">
+        <div class="group">
+          <button class="pill brand" id="sceneBtn" aria-haspopup="true" aria-expanded="false" title="Change scene">
+            <span id="sceneIcon">🦒</span><span id="sceneName">Savanna</span>
+          </button>
+          <span class="pill status" id="movieBadge" hidden>🎬 Music/Movie mode</span>
+          <span class="pill status" id="settlingBadge" hidden>Tuning out the speakers…</span>
+        </div>
+        <div class="group">
+          <button class="round" id="movieBtn" title="Music/Movie mode" aria-label="Music/Movie mode">🎬</button>
+          <button class="round" id="collectionBtn" title="Animals spotted" aria-label="Animals spotted">📖</button>
+          <button class="round" id="settingsBtn" title="Settings" aria-label="Settings">⚙️</button>
+          <button class="round" id="fullscreenBtn" title="Full screen" aria-label="Full screen">⛶</button>
+        </div>
+      </div>
+
+      <!-- Bottom bar: volume goal -->
+      <div class="bar bottom">
+        <div class="group goals" role="radiogroup" aria-label="Volume goal">
+          <button class="chip" data-goal="20" role="radio">🤫 Silent</button>
+          <button class="chip" data-goal="38" role="radio">🗣️ Whisper</button>
+          <button class="chip" data-goal="58" role="radio">💬 Partner work</button>
+        </div>
+        <div class="group">
+          <div class="meter" id="meter" hidden aria-hidden="true">
+            <div class="meter-fill" id="meterFill"></div>
+            <div class="meter-goal" id="meterGoal"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene menu -->
+      <div class="menu" id="sceneMenu" hidden></div>
+
+      <!-- Start screen -->
+      <div class="overlay" id="start">
+        <div class="card center">
+          <div class="logo">🦒</div>
+          <h1>Shy Safari</h1>
+          <p class="note">
+            <strong>Shh… these animals are shy!</strong><br />
+            Keep the room calm and they'll come out and stay. If it gets too loud, they'll run away.
+          </p>
+          <div class="scene-pick" id="startScenes"></div>
+          <label class="toggle-row">
+            <input type="checkbox" id="startMovie" />
+            <span>
+              <strong>🎬 Music/Movie mode</strong><br />
+              <small>Ignore music or videos playing on this computer.</small>
+            </span>
+          </label>
+          <button class="primary" id="startBtn">Start</button>
+          <p class="fine" id="startError">
+            Your browser will ask to use the microphone. Sound is measured on this computer and never recorded or sent anywhere.
+          </p>
+        </div>
+      </div>
+
+      <!-- Music / Movie panel -->
+      <aside class="drawer" id="moviePanel" hidden aria-labelledby="movieTitle">
+        <header>
+          <h2 id="movieTitle">🎬 Music/Movie mode</h2>
+          <button class="close" data-close>Close</button>
+        </header>
+        <label class="toggle-row big">
+          <input type="checkbox" id="movieToggle" />
+          <span><strong>Ignore sound from this computer</strong></span>
+        </label>
+        <p class="status-line" id="aecStatus"></p>
+        <p>
+          The microphone switches to echo cancellation, so music or a movie coming out of your speakers
+          is removed before it's measured. Only the class's voices count.
+        </p>
+
+        <h3>Play it here</h3>
+        <p class="hint">Works best when the sound plays in this window. Playing something turns Music/Movie mode on.</p>
+        <div class="player-controls">
+          <label class="button">
+            📁 Open a video or song
+            <input type="file" id="fileInput" accept="audio/*,video/*" hidden />
+          </label>
+          <form id="ytForm" class="yt">
+            <input type="url" id="ytUrl" placeholder="Paste a YouTube link" aria-label="YouTube link" />
+            <button type="submit">Play</button>
+          </form>
+        </div>
+
+        <details>
+          <summary>Tips</summary>
+          <ul>
+            <li>Chrome and Edge also cancel sound from their other tabs, so a YouTube or Spotify tab in the same browser works too.</li>
+            <li>Sound from other apps (a desktop music app, a DVD player) can't be fully removed. Play it in the browser instead.</li>
+            <li>Keep the speakers at a normal level. Very loud speakers can leak through.</li>
+            <li>Calibrate once in Music/Movie mode (Settings) for the most accurate goal.</li>
+          </ul>
+        </details>
+      </aside>
+
+      <!-- Floating player -->
+      <div class="player" id="player" hidden>
+        <div class="player-bar">
+          <span id="playerTitle">Now playing</span>
+          <div>
+            <button id="playerSize" title="Bigger / smaller">⤢</button>
+            <button id="playerClose" title="Stop and close">✕</button>
+          </div>
+        </div>
+        <div class="player-body" id="playerBody"></div>
+      </div>
+
+      <!-- Settings panel -->
+      <aside class="drawer" id="settingsPanel" hidden aria-labelledby="settingsTitle">
+        <header>
+          <h2 id="settingsTitle">Settings</h2>
+          <button class="close" data-close>Close</button>
+        </header>
+
+        <h3>Volume goal</h3>
+        <div class="live-meter">
+          <div class="meter wide">
+            <div class="meter-fill" id="liveFill"></div>
+            <div class="meter-goal" id="liveGoal"></div>
+          </div>
+          <input type="range" id="goalRange" min="5" max="95" step="1" aria-label="Volume goal" />
+        </div>
+        <p class="hint">Only you see this. The bar is the room right now; the line is the goal.</p>
+        <label class="toggle-row">
+          <input type="checkbox" id="showMeter" />
+          <span>Show the meter on screen</span>
+        </label>
+
+        <h3>New animals</h3>
+        <div class="segmented" id="pace">
+          <button data-pace="8">Relaxed</button>
+          <button data-pace="5">Normal</button>
+          <button data-pace="2">Lively</button>
+        </div>
+        <p class="hint">About one new animal every <input type="number" id="paceInput" min="0.5" max="60" step="0.5" /> minutes of calm.</p>
+
+        <h3>When it gets too loud</h3>
+        <div class="segmented" id="loudMode">
+          <button data-mode="run">Animals run away</button>
+          <button data-mode="pause">Pause the scene</button>
+        </div>
+
+        <h3>Calibrate</h3>
+        <p class="hint">
+          5 seconds of silence, then 5 seconds of normal talking. Saved separately for normal and Music/Movie mode
+          (<span id="calMode">normal</span> now).
+        </p>
+        <button class="button" id="calibrateBtn">🎙️ Calibrate</button>
+        <button class="link" id="calResetBtn">Reset</button>
+        <p class="status-line" id="calStatus"></p>
+      </aside>
+
+      <!-- Collection panel -->
+      <aside class="drawer" id="collectionPanel" hidden aria-labelledby="collectionTitle">
+        <header>
+          <h2 id="collectionTitle">Animals spotted</h2>
+          <button class="close" data-close>Close</button>
+        </header>
+        <div id="collection"></div>
+        <button class="link" id="collectionReset">Clear collection</button>
+      </aside>
+
+      <div class="toast" id="toast" role="status" hidden></div>
+    </main>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
