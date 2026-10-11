@@ -78,10 +78,12 @@ export function dbToLevel(db, cal) {
 
 // Builds calibration from a quiet sample and an optional talking sample, so
 // silence sits near 5 and normal partner talk sits near 60.
+// Returns null if there's no usable quiet sample (e.g. no readings came in).
 export function calibrationFrom(silentDb, talkDb) {
+  if (!Number.isFinite(silentDb)) return null;
   const floorDb = silentDb - 3;
   let spanDb = 50;
-  if (talkDb != null && talkDb > silentDb + 6) {
+  if (Number.isFinite(talkDb) && talkDb > silentDb + 6) {
     spanDb = (talkDb - floorDb) / 0.6;
   }
   return { floorDb, spanDb };

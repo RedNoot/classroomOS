@@ -50,6 +50,13 @@ test("calibration maps silence low and talking near 60", () => {
   assert.equal(dbToLevel(0, DEFAULT_CALIBRATION), 100);
 });
 
+test("calibration with no readings returns null instead of NaN", () => {
+  assert.equal(calibrationFrom(undefined, undefined), null);
+  assert.equal(calibrationFrom(NaN, -30), null);
+  // A missing talk sample falls back to the default span.
+  assert.deepEqual(calibrationFrom(-60, undefined), { floorDb: -63, spanDb: 50 });
+});
+
 test("youTubeId handles common links", () => {
   assert.equal(youTubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10"), "dQw4w9WgXcQ");
   assert.equal(youTubeId("https://youtu.be/dQw4w9WgXcQ?si=x"), "dQw4w9WgXcQ");

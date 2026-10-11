@@ -277,16 +277,22 @@ async function setMovieMode(on, reason) {
     updateMovieUI();
     return;
   }
-  settings.movieMode = on;
-  saveSettings();
   if (running) {
     try {
       await meter.setMovieMode(on);
     } catch (e) {
+      // The mic stayed in its old mode; keep settings (and the calibration
+      // slot) matching what is really being measured.
+      settings.movieMode = meter.movieMode;
+      saveSettings();
+      updateMovieUI();
       toast(`Couldn't switch the microphone (${e?.message || e})`);
+      return;
     }
     detector.suspend(SETTLE_S);
   }
+  settings.movieMode = on;
+  saveSettings();
   updateMovieUI();
   if (reason) toast(reason);
 }
@@ -374,6 +380,7 @@ async function calibrate() {
   if (!running) return;
   const btn = $("calibrateBtn");
   const status = $("calStatus");
+  const slot = settings.movieMode ? "movie" : "normal";
   btn.disabled = true;
   const collect = async (label) => {
     sampler = [];
@@ -381,18 +388,31 @@ async function calibrate() {
       status.textContent = `${label} ${s}…`;
       await new Promise((r) => setTimeout(r, 1000));
     }
-    const vals = sampler.sort((a, b) => a - b);
+    const vals = sampler.filter(Number.isFinite).sort((a, b) => a - b);
     sampler = null;
     return vals;
   };
-  const quiet = await collect("🤫 Everyone silent please…");
-  const talk = await collect("💬 Now talk in normal partner voices…");
-  const silentDb = quiet[Math.floor(quiet.length * 0.5)];
-  const talkDb = talk[Math.floor(talk.length * 0.75)];
-  settings.calibration[settings.movieMode ? "movie" : "normal"] = calibrationFrom(silentDb, talkDb);
-  saveSettings();
-  status.textContent = "✓ Calibrated. The goal presets now fit this room.";
-  btn.disabled = false;
+  try {
+    const quiet = await collect("🤫 Everyone silent please…");
+    const talk = await collect("💬 Now talk in normal partner voices…");
+    // Playing something switches Music/Movie mode on mid-calibration; the
+    // samples would then mix two microphone setups.
+    if ((settings.movieMode ? "movie" : "normal") !== slot) {
+      status.textContent = "Music/Movie mode changed during calibration. Please calibrate again.";
+      return;
+    }
+    const cal = calibrationFrom(quiet[Math.floor(quiet.length * 0.5)], talk[Math.floor(talk.length * 0.75)]);
+    if (!cal) {
+      status.textContent = "No sound readings came in. Keep this tab in front and try again.";
+      return;
+    }
+    settings.calibration[slot] = cal;
+    saveSettings();
+    status.textContent = "✓ Calibrated. The goal presets now fit this room.";
+  } finally {
+    sampler = null;
+    btn.disabled = false;
+  }
 }
 
 // ---------- Panels & controls ----------
