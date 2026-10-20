@@ -2229,8 +2229,10 @@ function fullFallback(win){
   if(win.dataset.max!=='1') toggleWinMax(win);
   pushNote({emoji:'⛶', title:'Fullscreen limited', msg:"This browser blocked true fullscreen, so the tool was maximised instead. Press F11 to hide the browser bar."});
 }
-function exitWinFull(){
-  if(fsElement() && document.exitFullscreen){ try{ document.exitFullscreen(); }catch(e){} }
+function exitWinFull(keepNative){
+  // keepNative: the page is taking over fullscreen, so hand it straight over —
+  // exiting first would land after the new request and cancel it
+  if(!keepNative && fsElement() && document.exitFullscreen){ try{ document.exitFullscreen(); }catch(e){} }
   if(fullWin){ fullWin.classList.remove('winfull'); syncFullBtn(fullWin,false); const fw=fullWin; fullWin=null; requestAnimationFrame(()=>fitWindowContent(fw)); }
 }
 function syncFullBtn(win,on){
@@ -2241,12 +2243,24 @@ function syncFullBtn(win,on){
    Shares the one native fullscreen slot with per-window fullscreen, so entering
    one exits the other rather than leaving both flags set. */
 let appFull=false;
+/* The one way into page-level fullscreen (app button, slides, iPad student view).
+   Resolves true only if THIS call entered it, so a caller can tell whether it's
+   theirs to exit later. */
+function requestDocFull(){
+  const el=document.documentElement, rq=el.requestFullscreen||el.webkitRequestFullscreen;
+  if(!rq || fsElement()===el) return Promise.resolve(false);
+  if(fullWin) exitWinFull(true);                   // take the slot over from a fullscreen window
+  try{ return Promise.resolve(rq.call(el)).then(()=>true, ()=>false); }
+  catch(e){ return Promise.resolve(false); }
+}
 function toggleAppFull(){
   if(appFull || fsElement()===document.documentElement){ exitAppFull(); return; }
-  if(fullWin) exitWinFull();                       // give up the slot cleanly first
-  const el=document.documentElement, rq=el.requestFullscreen||el.webkitRequestFullscreen;
-  if(rq){ try{ Promise.resolve(rq.call(el)).then(()=>{ appFull=true; syncAppFullBtn(); }).catch(()=>{}); }catch(e){} }
-  else pushNote({emoji:'⛶', title:'Fullscreen unavailable', msg:'This browser blocked fullscreen. Press F11 to hide the browser bar instead.'});
+  const el=document.documentElement;
+  if(!(el.requestFullscreen||el.webkitRequestFullscreen)){
+    pushNote({emoji:'⛶', title:'Fullscreen unavailable', msg:'This browser blocked fullscreen. Press F11 to hide the browser bar instead.'});
+    return;
+  }
+  requestDocFull().then(ok=>{ if(ok){ appFull=true; syncAppFullBtn(); } });
 }
 function exitAppFull(){
   if(fsElement() && document.exitFullscreen){ try{ document.exitFullscreen(); }catch(e){} }
@@ -2400,11 +2414,6 @@ function fitWindowContent(win){
 }
 // re-fit every open window (used on viewport resize)
 function fitAllWindows(){ Object.values(openWindows||{}).forEach(w=>{ if(w&&w.style&&w.style.display!=='none') fitWindowContent(w); }); }
-
-/* DEV MODE (?dev in the URL) — a floating slider to tune the fit floor against a
-   real screen. Never shows for teachers. The chosen value persists so it survives
-   reloads during testing; once you settle on a number, tell me and I'll bake it in. */
-function initDevFloor(){}   /* dev fit-floor tuner removed; floor is now a fixed constant */
 
 
 function makeResizable(win, handle){
@@ -4004,19 +4013,24 @@ function openScheduleEditor(onSaved){
    Decks are held in memory for the session.
    ============================================================ */
 let SLIDES=[], slideIdx=0, stageOn=false, SLIDE_EMBED='', slidesFull=false;
+let slidesOwnFull=false;   // slides entered native fullscreen itself (vs. app fullscreen already on)
 function setSlidesFull(on){
   slidesFull=on;
   document.body.classList.toggle('slides-full', on);
   const b=document.getElementById('slide-full');
   if(b) b.textContent = on ? '🡼 Exit full' : '⛶ Fullscreen';
   if(on){
-    const el=document.documentElement, rq=el.requestFullscreen||el.webkitRequestFullscreen;
-    if(rq){ try{ rq.call(el); }catch(e){} }
-  } else if(document.fullscreenElement && document.exitFullscreen){
-    try{ document.exitFullscreen(); }catch(e){}
+    requestDocFull().then(ok=>{
+      slidesOwnFull=ok;
+      if(ok && !slidesFull) setSlidesFull(false);  // switched off before fullscreen landed
+    });
+  } else {
+    // only leave fullscreen if slides put us there — app fullscreen stays on
+    if(slidesOwnFull && fsElement() && document.exitFullscreen){ try{ document.exitFullscreen(); }catch(e){} }
+    slidesOwnFull=false;
   }
 }
-document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement && slidesFull) setSlidesFull(false); });
+document.addEventListener('fullscreenchange',()=>{ if(!fsElement() && slidesFull) setSlidesFull(false); });
 function normalizeEmbed(u){
   u=(u||'').trim();
   if(/\/embed/.test(u)) return u;                       // already an embed URL
@@ -5185,7 +5199,7 @@ function openGridStudentView(boardId){
       card.querySelector('[data-back]').onclick=e=>{ e.stopPropagation();
         const cur=board.status[name]||0; if(cur>0){ board.status[name]=cur-1; render(); persist(); } };
     });
-    host.querySelector('[data-full]').onclick=()=>{ const el=document.documentElement; (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); };
+    host.querySelector('[data-full]').onclick=()=>requestDocFull();
     host.querySelector('[data-exit]').onclick=()=>closeGridStudentView();
   }
 
@@ -5391,9 +5405,7 @@ function openGridQR(board){
     </div></div>`;
   document.body.appendChild(ov);
   const qbox=ov.querySelector('[data-qr]');
-  if(typeof QRCode!=='undefined'){ try{ new QRCode(qbox,{text:url,width:200,height:200,correctLevel:QRCode.CorrectLevel.M}); }
-    catch(e){ qbox.innerHTML='<img alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data='+encodeURIComponent(url)+'">'; } }
-  else { qbox.innerHTML='<img alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data='+encodeURIComponent(url)+'">'; }
+  renderQR(qbox, url);
   ov.querySelector('[data-copy]').onclick=()=>{ try{ navigator.clipboard.writeText(url); flash('Link copied'); }catch(e){} };
   ov.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>ov.remove());
   ov.addEventListener('mousedown',e=>{ if(e.target===ov)ov.remove(); });
@@ -5770,18 +5782,14 @@ function showTourStep(){
 
 function renderQR(box, text){
   box.innerHTML='';
-  // 1. local library (bundled via CDN) — works offline once cached
+  // local library (bundled via CDN) — works offline once cached. No remote QR
+  // service as a backup: that would send the link (board/form ids) to a third party.
   if(typeof QRCode!=='undefined'){
     try{ new QRCode(box,{text,width:220,height:220,correctLevel:QRCode.CorrectLevel.M}); return; }catch(e){}
   }
-  // 2. remote image service — needs the network
-  const img=document.createElement('img'); img.width=220; img.height=220; img.alt='QR code';
-  img.style.background='#fff'; img.style.borderRadius='10px';
-  img.onerror=()=>{ img.remove(); qrFallback(box, text); };
-  img.src='https://api.qrserver.com/v1/create-qr-code/?size=220x220&data='+encodeURIComponent(text);
-  box.appendChild(img);
+  qrFallback(box, text);
 }
-/* 3. nothing loaded — say so plainly and give them something they can still use */
+/* nothing loaded — say so plainly and give them something they can still use */
 function qrFallback(box, text){
   const d=document.createElement('div'); d.className='qr-fallback';
   d.innerHTML=`<div class="qr-fb-icon">📵</div>
@@ -8153,7 +8161,6 @@ async function boot(){
     if(q.get('grid')!=='student') await restoreSession();
   }catch(e){}
   openFromQuery();                              // PWA shortcut deep links (?open=timer)
-  initDevFloor();                               // ?dev — live fit-floor tuning
   // re-fit scaled tool content when the viewport changes size
   let _fitT; window.addEventListener('resize',()=>{ clearTimeout(_fitT); _fitT=setTimeout(fitAllWindows,120); });
   // marker: boot reached the end. A throw anywhere above silently skips the rest of
