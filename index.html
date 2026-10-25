@@ -14,6 +14,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- AppReporter: crash reports and the feedback form go through the relay. No data-app here on
+     purpose: the main script starts it (see "DISCORD REPORTING") so that student names are
+     scrubbed from the very first report. In the portfolio, Netlify stamps data-version at build. -->
+<script src="app-reporter.js" id="app-reporter" data-version="0-dev"></script>
 <style>
   :root{
     --bg1:#bfe3f0; --bg2:#dff1e6;
@@ -1154,6 +1158,8 @@
    with graceful in-memory fallback so it still works anywhere.
    ============================================================ */
 
+initReporting();   // first, so even an early crash is scrubbed (see DISCORD REPORTING)
+
 /* ---------- storage helper (async, safe) ---------- */
 const mem = {};
 /* ---------- persistence ----------
@@ -1941,8 +1947,7 @@ function logError(kind, err, where){
   };
   errorLog.push(entry);
   if(errorLog.length>20) errorLog.shift();
-  console.error('[Classroom OS]', kind, err);
-  try{ sendCrashReport(entry); }catch(e){}   // opt-in, rate-limited, scrubbed; fails silently
+  console.error('[Classroom OS]', kind, err);   // AppReporter sends the crash itself (scrubbed, rate-limited)
   try{
     pushNote({
       emoji:'⚠️',
@@ -2065,25 +2070,16 @@ ${recent||'_None recorded._'}
 }
 
 /* ============================================================
-   DISCORD REPORTING
-   Two webhooks, two channels:
-     CRASH_HOOK    — automatic, unattended. Errors the app caught.
-     FEEDBACK_HOOK — manual. A teacher deliberately telling us something.
-                     Tagged 🐞 Bug / 💡 Idea / 💬 Other so suggestions can
-                     feed the roadmap instead of being lost in a bug queue.
+   DISCORD REPORTING (through AppReporter)
+   Crashes are sent automatically by the AppReporter kit loaded in <head>;
+   the 💬 Send feedback form goes through it too. The kit posts to the
+   AppReporter relay, which files everything in Discord, so no webhook
+   address is in this page any more.
 
-   ⚠️ SECURITY: these URLs are visible to anyone who views the page source.
-   A leaked webhook can only spam THAT channel — it can't read messages or
-   touch the rest of the server. Use throwaway channels; if abused, delete the
-   webhook and the app silently falls back to the GitHub issue flow.
-   If it ever becomes a problem, put a Cloudflare Worker in front and swap
-   these for the proxy URL — no other code changes needed.
-
-   ⚠️ PRIVACY: student names must NEVER leave the machine. Everything sent is
-   passed through scrub() first, and we send class SIZE, never the class list.
+   ⚠️ PRIVACY: student names must NEVER leave the machine. Every report
+   passes through scrub() in beforeSend below, and we send class SIZE,
+   never the class list. No crash reports from the sample classroom.
    ============================================================ */
-const CRASH_HOOK    = 'https://discord.com/api/webhooks/1525711041504477328/VtRqpTc8AX_gPIZ8902N7ELLsVaWCpY2GM8iXGzvB0gL0Ci7cZMAetpKsRNhSmKqJxA1';
-const FEEDBACK_HOOK = 'https://discord.com/api/webhooks/1525711191937257624/JxsK1-sebiicv7oZtzAQ4sHtWnQbVY397Gvy0GqOogPwYkunzWHJT7LsLoPxiMXpSXU-';
 
 /* Remove anything that could identify a child before it leaves the browser. */
 function scrub(text){
@@ -2105,64 +2101,38 @@ function scrub(text){
   return s.slice(0, 1500);
 }
 
-/* rate limiting — one broken tool must never flood the channel */
-const RL = { sent:0, last:0, max:5 };
-function rateOk(){
-  const now=Date.now();
-  if(RL.sent >= RL.max) return false;             // per page-load ceiling
-  if(now - RL.last < 20000) return false;         // no more than one per 20s
-  RL.sent++; RL.last=now; return true;
-}
-
-function reportingOn(){ return SETTINGS.crashReports===true; }
-
-async function postDiscord(hook, payload){
-  if(!hook) return false;
-  try{
-    const r = await fetch(hook, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(payload),
-    });
-    return r.ok;
-  }catch(e){ return false; }   // offline, blocked, or webhook deleted — fail quietly
-}
-
-function envFields(){
-  const caps=capsSummary();
-  const f=(name,value,inline)=>({name, value:(String(value||'').trim()||'—'), inline:!!inline});
-  return [
-    f('Version',  APP_VERSION, true),
-    f('Storage',  storageKind(), true),
-    f('Backups',  SETTINGS.bkMode||'off', true),
-    f('Class size', String((STUDENTS||[]).length), true),   // a NUMBER, never names
-    f('Address',  location.protocol+'//'+(location.host||'local file'), true),
-    f('Blocked',  caps.issues.join(', ')||'nothing', true),
-    f('Browser',  '`'+String(navigator.userAgent||'?').slice(0,120)+'`', false),
-  ];
-}
-
-/* --- automatic crash report --- */
-async function sendCrashReport(entry){
-  if(!reportingOn() || demoMode) return false;
-  if(!CRASH_HOOK) return false;
-  if(!rateOk()) return false;
-  const title = (scrub(entry.msg)||'Unknown error').slice(0,240);
-  const ok = await postDiscord(CRASH_HOOK, {
-    username:'Classroom OS',
-    embeds:[{
-      title:'💥 '+title,
-      color:0xe2574c,
-      description: entry.stack ? '```\n'+scrub(entry.stack).slice(0,900)+'\n```' : '_no stack trace_',
-      fields:[
-        {name:'Where', value: (entry.where||'unknown'), inline:true},
-        {name:'Kind',  value: (entry.kind||'error'), inline:true},
-        ...envFields(),
-      ],
-      timestamp: entry.at,
-    }],
+/* The kit (rate-limited per page) sends; this adds the class facts and runs
+   scrub() over everything that could carry a name: message, stack, typed
+   text, breadcrumbs and context. */
+function initReporting(){
+  if(!window.AppReporter) return;   // kit blocked or missing: the app works the same
+  const tag=document.getElementById('app-reporter');
+  AppReporter.init({
+    app:'classroomos',
+    endpoint:'https://app-reporter.app-reporter-relay.workers.dev',
+    version:(tag && tag.getAttribute('data-version')) || '0-dev',
+    env:/^(localhost|127\.|192\.168\.)/.test(location.hostname) || location.protocol==='file:' ? 'dev' : 'prod',
+    button:false,                   // the 💬 Send feedback button in Settings is the way in
+    ignore:[/ResizeObserver/],      // harmless browser noise
+    context:()=>({
+      appVersion: APP_VERSION,
+      storage: storageKind(),
+      backups: SETTINGS.bkMode||'off',
+      classSize: (STUDENTS||[]).length,   // a NUMBER, never names
+      blocked: capsSummary().issues.join(', ')||'nothing',
+    }),
+    // The kit sends the report UNCHANGED if this throws, so any failure drops it instead.
+    beforeSend:r=>{
+      try{
+        let demo=false; try{ demo=demoMode; }catch(e){}   // a crash before demoMode is declared
+        if(demo && r.kind!=='bug' && r.kind!=='suggestion') return null;   // feedback still goes
+        r.message=scrub(r.message); r.stack=scrub(r.stack); r.userText=scrub(r.userText);
+        r.breadcrumbs=(r.breadcrumbs||[]).map(b=>({...b, msg:scrub(b.msg)}));
+        for(const k in r.context||{}) r.context[k]=scrub(r.context[k]);
+        return r;
+      }catch(e){ return null; }
+    },
   });
-  return ok;
 }
 
 /* --- manual report: bug, idea, or general feedback --- */
@@ -2173,22 +2143,14 @@ const FEEDBACK_KINDS = {
 };
 async function sendFeedback(kind, text){
   const k = FEEDBACK_KINDS[kind] || FEEDBACK_KINDS.other;
-  if(!FEEDBACK_HOOK) return false;
-  const recent = errorLog.slice(-2).map(e=>`• ${scrub(e.msg)}${e.where?` (${e.where})`:''}`).join('\n');
-  const fields = [...envFields()];
+  if(!window.AppReporter) return false;
+  const context = { feedback: k.tag };
   // only attach error context to bug reports — an idea doesn't need a stack trace
-  if(kind==='bug' && recent) fields.unshift({name:'Recent errors', value:'```\n'+recent.slice(0,500)+'\n```', inline:false});
-  const clean = scrub(text) || '(no description)';
-  return postDiscord(FEEDBACK_HOOK, {
-    username:'Classroom OS',
-    embeds:[{
-      title:`${k.emoji} [${k.tag}] ${clean.slice(0,80)}${clean.length>80?'…':''}`,
-      color:k.color,
-      description: clean.slice(0,1200),
-      fields,
-      timestamp:new Date().toISOString(),
-    }],
-  });
+  const recent = errorLog.slice(-2).map(e=>`${e.msg}${e.where?` (${e.where})`:''}`).join(' • ');
+  if(kind==='bug' && recent) context.recentErrors = recent;
+  // scrub() runs on all of it in beforeSend. Sent, or queued while offline, counts as gone through.
+  const res = await AppReporter.report(kind==='bug' ? 'bug' : 'suggestion', { userText: text, context });
+  return !!res;
 }
 
 /* ---------- window maximise + snap layouts (split screen) ----------
@@ -7166,10 +7128,7 @@ function buildSettings(body){
         <div class="row" style="margin-top:14px"><button class="btn sm" data-rerun>🚀 Run setup again</button>
           <button class="btn sm" data-demo>🎓 Sample classroom</button>
           <button class="btn sm" data-bug>💬 Send feedback</button></div>
-        <label class="opt-row" style="margin-top:10px" data-crash-row>
-          <input type="checkbox" data-crash>
-          <span class="hint">Send anonymous crash reports (never includes student names)</span>
-        </label>
+        <div class="hint" style="margin-top:10px">If something breaks, an anonymous crash report is sent automatically so it can be fixed (never includes student names).</div>
         <div class="row" style="margin-top:8px" data-test-row>
           <button class="btn sm ghost" data-test-hook>🧪 Send a test report</button>
           <span class="hint" data-test-stat></span>
@@ -7323,25 +7282,16 @@ function buildSettings(body){
   if(bkRes) bkRes.onclick=()=>pickRestoreFile();
   const bug=body.querySelector('[data-bug]');
   if(bug) bug.onclick=()=>reportBug();
-  const crRow=body.querySelector('[data-crash-row]');
-  const crBox=body.querySelector('[data-crash]');
-  if(crRow) crRow.style.display=(CRASH_HOOK||FEEDBACK_HOOK)?'':'none';   // hide if no webhook configured
-  if(crBox){ crBox.checked=!!SETTINGS.crashReports;
-    crBox.onchange=e=>{ SETTINGS.crashReports=e.target.checked; saveSettings(); }; }
   // send a test report so the pipeline can be verified without waiting for a real crash
   const tRow=body.querySelector('[data-test-row]');
-  if(tRow) tRow.style.display=(CRASH_HOOK||FEEDBACK_HOOK)?'':'none';
+  if(tRow) tRow.style.display=window.AppReporter?'':'none';   // hide if the kit didn't load
   const tBtn=body.querySelector('[data-test-hook]'), tStat=body.querySelector('[data-test-stat]');
   if(tBtn) tBtn.onclick=async()=>{
     tBtn.disabled=true; tStat.textContent='Sending…';
-    RL.sent=0; RL.last=0;                        // a deliberate test bypasses the rate limit
-    const was=SETTINGS.crashReports; SETTINGS.crashReports=true;
-    const ok=await sendCrashReport({
-      kind:'test', where:'Settings', at:new Date().toISOString(),
-      msg:'Test report — if you can read this, the webhook works.',
-      stack:'(this is a test, not a real error)',
-    });
-    SETTINGS.crashReports=was;
+    const ok=!!(await AppReporter.report('error', {
+      message:'Test report from Settings — if you can read this, reporting works.',
+      context:{ where:'Settings' },
+    }));
     tStat.innerHTML = ok ? '✅ Sent — check your Discord channel.'
                          : '❌ Failed. The webhook may be wrong, deleted, or you\'re offline.';
     tBtn.disabled=false;
@@ -7884,18 +7834,12 @@ function openWelcome(){
     const db=bodyEl.querySelector('[data-dl]');
     if(db) db.onclick=async()=>{ SETTINGS.bkMode='download'; saveSettings(); await downloadBackup();
       stat.innerHTML='✅ <b>Saved to Downloads.</b>'; };
-    // crash reports — opt-in, and honest about what's sent
-    if(CRASH_HOOK || FEEDBACK_HOOK){
-      const cr=document.createElement('div'); cr.className='wc-optin';
-      cr.innerHTML=`<label class="opt-row">
-          <input type="checkbox" data-crash ${SETTINGS.crashReports?'checked':''}>
-          <span><b>Send anonymous crash reports</b><br>
-            <span class="hint">If something breaks, let us know automatically so it can be fixed.
-            We send the error, your browser and the app version — <b>never your students' names</b>. Off by default.</span></span>
-        </label>`;
-      bodyEl.appendChild(cr);
-      cr.querySelector('[data-crash]').onchange=e=>{ SETTINGS.crashReports=e.target.checked; saveSettings(); };
-    }
+    // crash reports — automatic, and honest about what's sent
+    const cr=document.createElement('div'); cr.className='wc-optin';
+    cr.innerHTML=`<div class="opt-row"><span><b>Anonymous crash reports</b><br>
+        <span class="hint">If something breaks, a report is sent automatically so it can be fixed.
+        We send the error, your browser and the app version — <b>never your students' names</b>.</span></span></div>`;
+    bodyEl.appendChild(cr);
     foot.innerHTML=`<button class="btn ghost" data-skip2>Skip — I'll risk it</button>
       <span style="flex:1"></span>
       <button class="btn primary" data-fin>Finish ✓</button>`;
