@@ -367,7 +367,7 @@ function render(){
   const {n} = layout(o.Z), pages = [];
   for(const sh of sheets($('mode').value, n)){
     for(let i=0; i<sh.rows.length; i+=n){
-      pages.push(pageSVG({...sh, title: sh.title + (i ? ' (continued)' : '')}, sh.rows.slice(i, i+n), o));
+      pages.push(pageSVG({...sh, sub: i ? [sh.sub, 'continued'].filter(Boolean).join(' · ') : sh.sub}, sh.rows.slice(i, i+n), o));
     }
   }
   $('pages').innerHTML = pages.join('');

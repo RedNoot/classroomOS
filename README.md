@@ -23,4 +23,6 @@ each stroke, then an empty dotted-thirds row beneath to practise. Pick letter
 families, one page per letter, capitals, numbers or your own words, choose a
 size, and print (A4).
 
+Ready-to-print PDFs of the main sets are in `handwriting-sheets/`.
+
 A copy also runs on the portfolio site (RedNoot/portfolio, `apps/classroom-os/`).
