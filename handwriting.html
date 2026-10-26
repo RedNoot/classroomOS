@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en-AU">
+<!-- Handwriting sheets — printable Victorian Modern Cursive tracing + dotted thirds practice -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Handwriting Sheets</title>
+<meta name="description" content="Printable Victorian Modern Cursive handwriting sheets: trace letters with direction arrows, then practise on dotted thirds.">
+<style>
+  :root{
+    --bg:#eef3f8; --surface:#ffffff; --surface-2:#f4f7fb; --ink:#243042; --ink-soft:#5b6b80;
+    --line:#dfe6ef; --accent:#3a8dde; --accent-ink:#ffffff;
+    --font:'Nunito',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#18202c; --surface:#223047; --surface-2:#1d293d; --ink:#eaf1fb; --ink-soft:#a9b9d0; --line:#33445f;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font)}
+  .controls{position:sticky;top:0;z-index:2;background:var(--surface);border-bottom:1px solid var(--line);
+    padding:12px 16px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:flex-end}
+  .controls h1{font-size:17px;margin:0 8px 0 0;font-weight:900;align-self:center}
+  .field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--ink-soft)}
+  .field select,.field textarea{font:inherit;font-size:14px;font-weight:600;color:var(--ink);background:var(--surface-2);
+    border:1px solid var(--line);border-radius:9px;padding:6px 8px}
+  .field textarea{width:min(320px,80vw);height:58px;resize:vertical}
+  .checks{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;font-weight:600}
+  .checks label{display:flex;align-items:center;gap:5px;cursor:pointer}
+  .print{margin-left:auto;font:inherit;font-weight:900;font-size:14px;border:none;border-radius:10px;
+    padding:9px 18px;background:var(--accent);color:var(--accent-ink);cursor:pointer}
+  .count{font-size:12px;color:var(--ink-soft);font-weight:700;align-self:center}
+  #custom-wrap[hidden]{display:none}
+  #pages{padding:20px 16px 40px}
+  svg.page{display:block;width:100%;max-width:820px;height:auto;margin:0 auto 24px;background:#fff;
+    box-shadow:0 6px 24px rgba(28,48,80,.16);border-radius:4px}
+  @page{size:A4;margin:0}
+  @media print{
+    .controls{display:none}
+    body{background:#fff}
+    #pages{padding:0}
+    svg.page{width:210mm;height:296mm;max-width:none;margin:0;box-shadow:none;border-radius:0;break-after:page}
+    svg.page:last-child{break-after:auto}
+  }
+</style>
+
+<div class="controls">
+  <h1>✍️ Handwriting sheets</h1>
+  <label class="field">Sheets
+    <select id="mode">
+      <option value="families">Letter families</option>
+      <option value="lower-page">Lowercase: one page per letter</option>
+      <option value="lower-all">Lowercase a–z: one row each</option>
+      <option value="upper-page">Capitals: one page per letter</option>
+      <option value="upper-all">Capitals A–Z: one row each</option>
+      <option value="digits">Numbers 0–9</option>
+      <option value="custom">Your own letters or words</option>
+    </select>
+  </label>
+  <label class="field" id="custom-wrap" hidden>One row per line
+    <textarea id="custom">a c d
+cat dog
+Aa Bb Cc</textarea>
+  </label>
+  <label class="field">Size
+    <select id="size">
+      <option value="9">Large (Foundation–1)</option>
+      <option value="7" selected>Medium (2–3)</option>
+      <option value="5.5">Small (4–6)</option>
+    </select>
+  </label>
+  <label class="field">Tracing letters
+    <select id="trace">
+      <option value="dots">Dotted</option>
+      <option value="grey">Pale grey</option>
+    </select>
+  </label>
+  <label class="field">Arrows
+    <select id="arrows">
+      <option value="all">On every letter</option>
+      <option value="model">First letter only</option>
+      <option value="none">None</option>
+    </select>
+  </label>
+  <div class="checks">
+    <label><input type="checkbox" id="dots" checked> Start dots</label>
+    <label><input type="checkbox" id="slant" checked> Slope</label>
+    <label><input type="checkbox" id="shade"> Shade middle third</label>
+  </div>
+  <span class="count" id="count"></span>
+  <button class="print" onclick="window.print()">🖨️ Print</button>
+</div>
+<div id="pages"></div>
+
+<script>
+/* ===== Letter shapes =====
+   Each glyph is drawn in units on a dotted-thirds grid: y 0 = top line,
+   10 = middle, 20 = baseline, 30 = descender line. A glyph is a list of strokes
+   (pen down to pen up), each a list of segments; arrows sit on segments, so the
+   direction shown is the order the points are drawn in. */
+const RAD = Math.PI/180;
+const seg = (pts, o={}) => ({pts, ...o});
+const L = (x1,y1,x2,y2,o) => seg([[x1,y1],[x2,y2]], o);
+// ellipse arc, angles in degrees, 0 = right, 90 = top; a0→a1 increasing goes anticlockwise
+function A(cx,cy,rx,ry,a0,a1,o){
+  const n = Math.max(2, Math.ceil(Math.abs(a1-a0)/5)), pts = [];
+  for(let i=0;i<=n;i++){ const a=(a0+(a1-a0)*i/n)*RAD; pts.push([cx+rx*Math.cos(a), cy-ry*Math.sin(a)]); }
+  return seg(pts, o);
+}
+function B(p0,p1,p2,p3,o){
+  const pts = [];
+  for(let i=0;i<=16;i++){
+    const t=i/16, u=1-t, k=[u*u*u, 3*u*u*t, 3*u*t*t, t*t*t];
+    pts.push([0,1].map(j => k[0]*p0[j]+k[1]*p1[j]+k[2]*p2[j]+k[3]*p3[j]));
+  }
+  return seg(pts, o);
+}
+const NO = {arrow:false};
+const UP_L = {off:[-1.8,0]}, UP_R = {off:[1.8,0]};   // retraced strokes: arrow beside the line
+const flick = (x, y=17) => B([x,y],[x,y+3.3],[x+2.4,y+3.7],[x+3.9,y+1.1], NO);   // exit flick
+const hookL = (x, y, to) => B([x,y],[x,y+4.6],[to,y+4.8],[to-0.4,y+1.4], NO);    // descender curling left
+const dot = (x,y) => ({dot:[x,y]});
+
+// the a/d/g/q bowl: start top right, round anticlockwise, back up to the middle line
+const bowl = () => A(4.4,15,4.2,5,40,360);
+const GLYPHS = {
+  a:[[bowl(), L(8.6,15,8.6,10,UP_R), L(8.6,10,8.6,17,{arrow:.7}), flick(8.6)]],
+  b:[[L(.6,0,.6,20), L(.6,20,.6,13.7,UP_L), A(4.3,15,3.7,5,165,-150)]],
+  c:[[A(4.4,15,4.2,5,45,320)]],
+  d:[[bowl(), L(8.6,15,8.6,0,UP_R), L(8.6,0,8.6,17,{arrow:.2}), flick(8.6)]],
+  e:[[L(.6,15,8.8,15), A(4.7,15,4.1,5,0,320)]],
+  f:[[A(4.2,3.4,2.8,3,25,180,NO), L(1.4,3.4,1.4,20)], [L(-.6,10,4.6,10)]],
+  g:[[bowl(), L(8.6,15,8.6,10,UP_R), L(8.6,10,8.6,26,{arrow:.6}), hookL(8.6,26,3.4)]],
+  h:[[L(.6,0,.6,20), L(.6,20,.6,14.2,UP_L), A(3.9,14.2,3.3,3.8,180,0), L(7.2,14.2,7.2,17,NO), flick(7.2)]],
+  i:[[L(1,10,1,17), flick(1)], [dot(1,6)]],
+  j:[[L(3.4,10,3.4,26), hookL(3.4,26,-.6)], [dot(3.4,6)]],
+  k:[[L(.6,0,.6,20), L(.6,20,.6,15.6,NO), B([.6,15.6],[1.4,10.2],[7.4,9.6],[6.5,13.1]),
+      B([6.5,13.1],[5.9,15.1],[3.2,15.7],[1.5,15.5],NO), L(1.5,15.5,5.4,19.2,NO), B([5.4,19.2],[6.1,20.1],[7.2,20],[8,18.5],NO)]],
+  l:[[L(1,0,1,17), flick(1)]],
+  m:[[L(.6,10,.6,20), L(.6,20,.6,14.2,UP_L), A(3.2,14.2,2.6,3.8,180,0), L(5.8,14.2,5.8,20),
+      L(5.8,20,5.8,14.2,NO), A(8.4,14.2,2.6,3.8,180,0,NO), L(11,14.2,11,17,NO), flick(11)]],
+  n:[[L(.6,10,.6,20), L(.6,20,.6,14.2,UP_L), A(3.9,14.2,3.3,3.8,180,0), L(7.2,14.2,7.2,17,NO), flick(7.2)]],
+  o:[[A(4.6,15,4.4,5,80,440,{arrow:[.2,.65]})]],
+  p:[[L(.6,10,.6,30), L(.6,30,.6,13.7,UP_L), A(4.3,15,3.7,5,165,-150)]],
+  q:[[bowl(), L(8.6,15,8.6,10,UP_R), L(8.6,10,8.6,27,{arrow:.6}), B([8.6,27],[8.6,30],[10.6,30.3],[11.8,28.2],NO)]],
+  r:[[L(.6,10,.6,20), L(.6,20,.6,14.5,UP_L), A(3.8,14.5,3.2,3.6,180,50)]],
+  s:[[A(4,12.5,3.2,2.5,35,270), A(4,17.5,3.4,2.5,90,-160)]],
+  t:[[L(1.6,3.5,1.6,17), flick(1.6)], [L(-.8,10,4.6,10)]],
+  u:[[L(.6,10,.6,16), A(3.9,16,3.3,4,180,360), L(7.2,16,7.2,10,UP_R), L(7.2,10,7.2,17,NO), flick(7.2)]],
+  v:[[L(0,10,3.6,20), L(3.6,20,7.2,10)]],
+  w:[[L(0,10,2.6,20), L(2.6,20,5.2,11), L(5.2,11,7.8,20), L(7.8,20,10.4,10)]],
+  x:[[L(.4,10,7,20,{arrow:.3})], [L(7,10,.4,20,{arrow:.3})]],
+  y:[[L(.6,10,.6,16), A(3.9,16,3.3,4,180,360), L(7.2,16,7.2,10,UP_R), L(7.2,10,7.2,26,{arrow:.6}), hookL(7.2,26,2)]],
+  z:[[L(.4,10,7.2,10), L(7.2,10,.4,20), L(.4,20,7.6,20)]],
+
+  A:[[L(5,0,0,20)], [L(5,0,10,20)], [L(2.2,12.5,7.8,12.5)]],
+  B:[[L(.6,0,.6,20)], [L(.6,0,4,0,NO), A(4,4.75,3.6,4.75,90,-90), L(4,9.5,.6,9.5,NO), L(.6,9.5,4.4,9.5,NO), A(4.4,14.75,4.2,5.25,90,-90), L(4.4,20,.6,20,NO)]],
+  C:[[A(6,10,5.8,10,45,315)]],
+  D:[[L(.6,0,.6,20)], [L(.6,0,3,0,NO), A(3,10,6.6,10,90,-90), L(3,20,.6,20,NO)]],
+  E:[[L(.6,0,.6,20)], [L(.6,0,8,0)], [L(.6,10,7,10)], [L(.6,20,8.4,20)]],
+  F:[[L(.6,0,.6,20)], [L(.6,0,8,0)], [L(.6,10,7,10)]],
+  G:[[A(6,10,5.8,10,45,340), L(11.45,13.4,11.45,11,NO), L(11.45,11,7.4,11,NO)]],
+  H:[[L(.6,0,.6,20)], [L(9,0,9,20)], [L(.6,10,9,10)]],
+  I:[[L(1,0,1,20)]],
+  J:[[L(7,0,7,14), A(3.8,14,3.2,6,360,180)]],
+  K:[[L(.6,0,.6,20)], [L(8.4,0,.6,11), L(.6,11,8.8,20)]],
+  L:[[L(.6,0,.6,20), L(.6,20,8,20)]],
+  M:[[L(.6,0,.6,20)], [L(.6,0,6,14), L(6,14,11.4,0), L(11.4,0,11.4,20)]],
+  N:[[L(.6,0,.6,20)], [L(.6,0,9.4,20), L(9.4,20,9.4,0)]],
+  O:[[A(6,10,5.8,10,90,450,{arrow:[.2,.65]})]],
+  P:[[L(.6,0,.6,20)], [L(.6,0,4,0,NO), A(4,5.25,4.2,5.25,90,-90), L(4,10.5,.6,10.5,NO)]],
+  Q:[[A(6,10,5.8,10,90,450,{arrow:[.2,.65]})], [L(6.8,14.5,11.4,21)]],
+  R:[[L(.6,0,.6,20)], [L(.6,0,4,0,NO), A(4,5.25,4.2,5.25,90,-90), L(4,10.5,.6,10.5,NO), L(3.6,10.5,9,20)]],
+  S:[[A(5.4,5,4.4,5,35,270), A(5.4,15,4.8,5,90,-155)]],
+  T:[[L(5,0,5,20)], [L(0,0,10,0)]],
+  U:[[L(.6,0,.6,14), A(5,14,4.4,6,180,360), L(9.4,14,9.4,0,NO)]],
+  V:[[L(0,0,5,20), L(5,20,10,0)]],
+  W:[[L(0,0,3.5,20), L(3.5,20,7,4), L(7,4,10.5,20), L(10.5,20,14,0)]],
+  X:[[L(.6,0,9.4,20,{arrow:.3})], [L(9.4,0,.6,20,{arrow:.3})]],
+  Y:[[L(0,0,5,10)], [L(10,0,5,10), L(5,10,5,20)]],
+  Z:[[L(.6,0,9.4,0), L(9.4,0,.6,20), L(.6,20,10,20)]],
+
+  0:[[A(4.6,10,4.4,10,90,450,{arrow:[.2,.65]})]],
+  1:[[L(.6,3.4,3.4,0,NO), L(3.4,0,3.4,20)]],
+  2:[[A(4.5,4.6,4.1,4.6,150,-20), L(8.35,6.17,.4,20), L(.4,20,9,20,NO)]],
+  3:[[A(4.4,4.8,3.9,4.8,150,-90), A(4.4,14.8,4.5,5.2,90,-150)]],
+  4:[[L(5.4,0,.4,13), L(.4,13,9.6,13)], [L(7.4,5.5,7.4,20)]],
+  5:[[L(1,0,.9,9.8), A(4.4,13.8,4.6,6.2,140,-150)], [L(1,0,8.4,0)]],
+  6:[[A(5.1,15,4.6,15,62,180), A(4.85,15,4.35,5,180,520,NO)]],
+  7:[[L(.4,0,9,0), L(9,0,3,20)]],
+  8:[[A(4.5,4.8,3.8,4.8,30,270), A(4.5,14.8,4.5,5.2,90,-270), A(4.5,4.8,3.8,4.8,-90,30,NO)]],
+  9:[[A(4.4,5,4.2,5,10,370), L(8.6,5,8.6,20)]],
+};
+
+const FAMILIES = [
+  ['Anticlockwise letters', 'cadgoqesf'],
+  ['Down and flick letters', 'iltjuy'],
+  ['Hump letters', 'nmhrbpk'],
+  ['Zigzag letters', 'vwxz'],
+];
+
+/* ===== Drawing ===== */
+const r = n => Math.round(n*100)/100;
+const INK = '#2b3446', TRACE = '#a3acbb', ARROW = '#e0453a', ARROW_SOFT = '#ef8a80', START = '#1f9d55';
+
+function bounds(g){
+  let lo=Infinity, hi=-Infinity;
+  for(const st of g) for(const s of st){ for(const p of (s.dot ? [s.dot] : s.pts)){ lo=Math.min(lo,p[0]); hi=Math.max(hi,p[0]); } }
+  return [lo, hi];
+}
+
+// point and direction a fraction of the way along a polyline
+function along(pts, t){
+  let total = 0; const lens = [];
+  for(let i=1;i<pts.length;i++){ const l=Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]); lens.push(l); total+=l; }
+  let want = total*t;
+  for(let i=0;i<lens.length;i++){
+    if(want <= lens[i] || i===lens.length-1){
+      const k = lens[i] ? Math.min(1, want/lens[i]) : 0, a=pts[i], b=pts[i+1];
+      return {total, p:[a[0]+(b[0]-a[0])*k, a[1]+(b[1]-a[1])*k], d:[(b[0]-a[0])/(lens[i]||1), (b[1]-a[1])/(lens[i]||1)]};
+    }
+    want -= lens[i];
+  }
+}
+
+function arrowHead(s){
+  const ts = Array.isArray(s.arrow) ? s.arrow : [typeof s.arrow==='number' ? s.arrow : .5];
+  return ts.map(t => {
+    const {total, p, d} = along(s.pts, t);
+    if(total < 3.5) return '';
+    const off = s.off || [0,0], x = p[0]+off[0], y = p[1]+off[1], n = [-d[1], d[0]];
+    const tip = [x+d[0]*1.6, y+d[1]*1.6], b1 = [x-d[0]*1.2+n[0]*1.35, y-d[1]*1.2+n[1]*1.35], b2 = [x-d[0]*1.2-n[0]*1.35, y-d[1]*1.2-n[1]*1.35];
+    return `<path d="M${r(tip[0])} ${r(tip[1])}L${r(b1[0])} ${r(b1[1])}L${r(b2[0])} ${r(b2[1])}Z"/>`;
+  }).join('');
+}
+
+// one glyph in its own units. kind: 'model' (solid ink) or 'trace'
+function glyphSVG(ch, kind, o){
+  const g = GLYPHS[ch]; if(!g) return '';
+  const model = kind === 'model', col = model ? INK : TRACE;
+  const dash = !model && o.trace === 'dots';
+  let ink = '', arrows = '', starts = '';
+  const labels = [], label = (x, y, away, n) => {   // nudge sideways off any label already placed
+    while(labels.some(([lx,ly]) => Math.hypot(lx-x, ly-y) < 2.6)) x += away < 0 ? -2.4 : 2.4;
+    labels.push([x,y]); starts += `<text x="${r(x)}" y="${r(y)}">${n}</text>`;
+  };
+  g.forEach((st, i) => {
+    const num = g.length > 1 && model && o.dots;
+    if(st[0].dot){
+      const [x,y] = st[0].dot;
+      ink += `<circle cx="${x}" cy="${y}" r="${dash ? .75 : .9}" fill="${col}"/>`;
+      if(num) label(x-2.6, y, -1, i+1);
+      return;
+    }
+    const pts = st.flatMap(s => s.pts);
+    ink += `<path d="M${pts.map(p => r(p[0])+' '+r(p[1])).join('L')}"/>`;
+    if(o.showArrows) for(const s of st) if(s.arrow !== false) arrows += arrowHead(s);
+    if(o.dots){
+      const [x,y] = pts[0], {d} = along(st[0].pts, 0);
+      starts += `<circle cx="${r(x)}" cy="${r(y)}" r="${model ? 1.05 : .85}"/>`;
+      // the stroke number sits just behind where the pen sets off
+      if(num) label(x-d[0]*2.9, y-d[1]*2.9, -d[0], i+1);
+    }
+  });
+  return `<g fill="none" stroke="${col}" stroke-width="${model ? 1.05 : dash ? .9 : 1}" stroke-linecap="round" stroke-linejoin="round"`
+    + (dash ? ` stroke-dasharray="0.01 1.75"` : '') + `>${ink}</g>`
+    + (arrows ? `<g fill="${model ? ARROW : ARROW_SOFT}" stroke="#fff" stroke-width=".35" stroke-linejoin="round" paint-order="stroke">${arrows}</g>` : '')
+    + (starts ? `<g fill="${START}" font-size="2.6" font-weight="800" font-family="system-ui,sans-serif" text-anchor="middle" dominant-baseline="central">${starts}</g>` : '');
+}
+
+// place a glyph: x in mm, top = row top in mm, Z = height of one third in mm
+function placeGlyph(ch, x, top, Z, kind, o){
+  const [lo] = bounds(GLYPHS[ch]), s = Z/10;
+  const skew = o.slant ? ' translate(0 20) skewX(-5) translate(0 -20)' : '';
+  return `<g transform="translate(${r(x)} ${r(top)}) scale(${r(s)})${skew} translate(${r(-lo)} 0)">${glyphSVG(ch, kind, o)}</g>`;
+}
+const advance = ch => { const [lo,hi] = bounds(GLYPHS[ch]); return hi - lo; };   // in units
+
+function guides(x0, x1, top, Z, o){
+  const solid = `stroke="#8d97a8" stroke-width="0.3"`, dotted = `stroke="#a7b0bf" stroke-width="0.3" stroke-dasharray="0.7 1.3"`;
+  let s = o.shade ? `<rect x="${x0}" y="${r(top+Z)}" width="${x1-x0}" height="${Z}" fill="#eef3fb"/>` : '';
+  [solid, dotted, dotted, solid].forEach((st, i) => { const y = r(top+Z*i); s += `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" ${st}/>`; });
+  return s;
+}
+
+// a trace row: the unit (letter or word) repeated to fill the row, the first one solid as a model
+function traceRow(unit, x0, x1, top, Z, o){
+  const s = Z/10, words = unit.trim().split(/\s+/).map(w => [...w].filter(c => GLYPHS[c]));
+  const single = words.length === 1 && words[0].length === 1;
+  const letterGap = single ? 4.5 : 2.2, wordGap = 7.5;
+  let x = x0 + 3*s, out = '', first = true, placed = 0;
+  for(let rep=0; rep<40; rep++){
+    for(const w of words){
+      if(!w.length) continue;
+      const width = w.reduce((t,c) => t + advance(c), 0) + letterGap*(w.length-1);
+      if(x + width*s > x1 - 2*s && placed) return out;
+      const kind = first ? 'model' : 'trace';
+      const opt = {...o, showArrows: o.arrows === 'all' || (o.arrows === 'model' && first)};
+      for(const c of w){ out += placeGlyph(c, x, top, Z, kind, opt); x += (advance(c) + letterGap)*s; }
+      x += (wordGap - letterGap)*s; first = false; placed++;
+    }
+  }
+  return out;
+}
+
+/* ===== Pages ===== */
+const W = 210, H = 297, MX = 14, TOP = 42, BOTTOM = 286;
+
+function header(sheet, o){
+  let s = `<text x="${MX}" y="16" font-size="3.3" font-weight="800" fill="#7a8699" letter-spacing="0.5">VICTORIAN MODERN CURSIVE</text>`
+    + `<text x="${MX}" y="26" font-size="8" font-weight="900" fill="${INK}">${esc(sheet.title)}</text>`;
+  if(sheet.sub) s += `<text x="${MX}" y="33" font-size="4.2" font-weight="700" fill="#5b6b80">${esc(sheet.sub)}</text>`;
+  const nx = sheet.big ? 112 : 128, ne = sheet.big ? 170 : 196;
+  s += `<text x="${nx}" y="19" font-size="3.6" font-weight="700" fill="#5b6b80">Name</text><line x1="${nx+11}" y1="19.5" x2="${ne}" y2="19.5" stroke="#8d97a8" stroke-width="0.3"/>`
+    + `<text x="${nx}" y="30" font-size="3.6" font-weight="700" fill="#5b6b80">Date</text><line x1="${nx+11}" y1="30.5" x2="${ne}" y2="30.5" stroke="#8d97a8" stroke-width="0.3"/>`;
+  if(sheet.big){   // a large model of the letter, with its arrows and start dot
+    const Zb = 8, bx = 176, by = 9, w = advance(sheet.big)*Zb/10;
+    s += guides(bx-2, 198, by, Zb, {}) + placeGlyph(sheet.big, bx + (20-w)/2 - 1, by, Zb, 'model', {...o, showArrows:true, dots:true});
+  }
+  return s + `<line x1="${MX}" y1="37" x2="${W-MX}" y2="37" stroke="#dfe6ef" stroke-width="0.4"/>`;
+}
+
+function layout(Z){
+  const pairH = 6*Z + 0.8*Z, minGap = 1.3*Z, room = BOTTOM - TOP;
+  const n = Math.max(1, Math.floor((room + minGap) / (pairH + minGap)));
+  const gap = n > 1 ? (room - n*pairH) / (n-1) : 0;
+  return {n, pairH, gap: Math.min(gap, 2.6*Z)};
+}
+
+function pageSVG(sheet, rows, o){
+  const Z = o.Z, {pairH, gap} = layout(Z);
+  let body = '';
+  rows.forEach((unit, i) => {
+    const top = TOP + i*(pairH + gap);
+    body += guides(MX, W-MX, top, Z, o) + traceRow(unit, MX, W-MX, top, Z, o)
+      + guides(MX, W-MX, top + 3.8*Z, Z, o);
+  });
+  return `<svg class="page" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="Nunito,system-ui,-apple-system,Segoe UI,Roboto,sans-serif">`
+    + `<rect width="${W}" height="${H}" fill="#fff"/>${header(sheet, o)}${body}`
+    + `<text x="${W/2}" y="292" font-size="2.6" fill="#a7b0bf" text-anchor="middle">Trace the grey letters, starting at the green dot. Then write your own on the empty lines.</text></svg>`;
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function sheets(mode, n){
+  const lower = 'abcdefghijklmnopqrstuvwxyz', upper = lower.toUpperCase();
+  const perLetter = (set, word) => [...set].map(c => ({title: `${word} ${c}`, rows: Array(n).fill(c), big: c}));
+  switch(mode){
+    case 'families':   return FAMILIES.map(([title, set]) => ({title, sub: [...set].join('  '), rows: [...set]}));
+    case 'lower-page': return perLetter(lower, 'Letter');
+    case 'lower-all':  return [{title: 'Lowercase letters', sub: 'a to z', rows: [...lower]}];
+    case 'upper-page': return perLetter(upper, 'Capital');
+    case 'upper-all':  return [{title: 'Capital letters', sub: 'A to Z', rows: [...upper]}];
+    case 'digits':     return [{title: 'Numbers', sub: '0 to 9', rows: [...'0123456789']}];
+    case 'custom': {
+      const rows = $('custom').value.split('\n').map(l => l.trim()).filter(l => [...l].some(c => GLYPHS[c]));
+      return [{title: 'Handwriting practice', rows: rows.length ? rows : ['a']}];
+    }
+  }
+}
+
+const $ = id => document.getElementById(id);
+function render(){
+  const o = {Z: +$('size').value, trace: $('trace').value, arrows: $('arrows').value,
+    dots: $('dots').checked, slant: $('slant').checked, shade: $('shade').checked};
+  $('custom-wrap').hidden = $('mode').value !== 'custom';
+  const {n} = layout(o.Z), pages = [];
+  for(const sh of sheets($('mode').value, n)){
+    for(let i=0; i<sh.rows.length; i+=n){
+      pages.push(pageSVG({...sh, title: sh.title + (i ? ' (continued)' : '')}, sh.rows.slice(i, i+n), o));
+    }
+  }
+  $('pages').innerHTML = pages.join('');
+  $('count').textContent = pages.length === 1 ? '1 page' : pages.length + ' pages';
+  try{ localStorage.setItem('hw-sheets', JSON.stringify({mode: $('mode').value, size: $('size').value, trace: o.trace,
+    arrows: o.arrows, dots: o.dots, slant: o.slant, shade: o.shade, custom: $('custom').value})); }catch(e){}
+}
+
+try{
+  const saved = JSON.parse(localStorage.getItem('hw-sheets') || 'null');
+  if(saved) for(const [k,v] of Object.entries(saved)){
+    const el = $(k); if(!el) continue;
+    if(el.type === 'checkbox') el.checked = v; else el.value = v;
+  }
+}catch(e){}
+document.querySelectorAll('.controls select, .controls input, .controls textarea').forEach(el => el.addEventListener('input', render));
+render();
+</script>

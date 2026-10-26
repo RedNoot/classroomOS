@@ -15,4 +15,12 @@ Not in the repo yet: `manifest.json`, `icon.svg`, `icon-192.png` and
 `service-worker.js`, which `index.html` links to for installing it as an app.
 Without them it still runs; it just can't be installed or work offline.
 
+## Handwriting sheets
+
+`handwriting.html` makes printable Victorian Modern Cursive sheets: a row of
+letters to trace, with arrows and a green start dot showing the direction of
+each stroke, then an empty dotted-thirds row beneath to practise. Pick letter
+families, one page per letter, capitals, numbers or your own words, choose a
+size, and print (A4).
+
 A copy also runs on the portfolio site (RedNoot/portfolio, `apps/classroom-os/`).
