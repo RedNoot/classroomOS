@@ -30,7 +30,7 @@
   .print{margin-left:auto;font:inherit;font-weight:900;font-size:14px;border:none;border-radius:10px;
     padding:9px 18px;background:var(--accent);color:var(--accent-ink);cursor:pointer}
   .count{font-size:12px;color:var(--ink-soft);font-weight:700;align-self:center}
-  #custom-wrap[hidden]{display:none}
+  #custom-wrap[hidden],#join-wrap[hidden]{display:none}
   #pages{padding:20px 16px 40px}
   svg.page{display:block;width:100%;max-width:820px;height:auto;margin:0 auto 24px;background:#fff;
     box-shadow:0 6px 24px rgba(28,48,80,.16);border-radius:4px}
@@ -54,6 +54,8 @@
       <option value="upper-page">Capitals: one page per letter</option>
       <option value="upper-all">Capitals A–Z: one row each</option>
       <option value="digits">Numbers 0–9</option>
+      <option value="joins">Joined: letter pairs</option>
+      <option value="joined-words">Joined: words</option>
       <option value="custom">Your own letters or words</option>
     </select>
   </label>
@@ -62,6 +64,7 @@
 cat dog
 Aa Bb Cc</textarea>
   </label>
+  <label class="checks" id="join-wrap" hidden style="align-self:center"><input type="checkbox" id="join"> Join letters</label>
   <label class="field">Size
     <select id="size">
       <option value="9">Large (Foundation–1)</option>
@@ -143,7 +146,7 @@ const GLYPHS = {
   o:[[A(4.6,15,4.4,5,80,440,{arrow:[.2,.65]})]],
   p:[[L(.6,10,.6,30), L(.6,30,.6,13.7,UP_L), A(4.3,15,3.7,5,165,-150)]],
   q:[[bowl(), L(8.6,15,8.6,10,UP_R), L(8.6,10,8.6,27,{arrow:.6}), B([8.6,27],[8.6,30],[10.6,30.3],[11.8,28.2],NO)]],
-  r:[[L(.6,10,.6,20), L(.6,20,.6,14.5,UP_L), A(3.8,14.5,3.2,3.6,180,50)]],
+  r:[[L(.6,10,.6,20), L(.6,20,.6,14.5,UP_L), A(3.8,14.5,3.2,3.6,180,62)]],
   s:[[A(4,12.5,3.2,2.5,35,270), A(4,17.5,3.4,2.5,90,-160)]],
   t:[[L(1.6,3.5,1.6,17), flick(1.6)], [L(-.8,10,4.6,10)]],
   u:[[L(.6,10,.6,16), A(3.9,16,3.3,4,180,360), L(7.2,16,7.2,10,UP_R), L(7.2,10,7.2,17,NO), flick(7.2)]],
@@ -192,6 +195,21 @@ const GLYPHS = {
   9:[[A(4.4,5,4.2,5,10,370), L(8.6,5,8.6,20)]],
 };
 
+/* VMC joins, taught in groups: diagonal joins leave from the baseline flick,
+   horizontal joins leave from the top of o r v w. */
+const JOIN_GROUPS = [
+  ['Diagonal joins', ['in un', 'an im', 'ar ay']],
+  ['Diagonal joins to tall letters', ['il al', 'el ch', 'ck ut']],
+  ['Diagonal joins over the top', ['ia ic', 'id ug', 'ho is']],
+  ['Diagonal joins to e', ['ie ue', 'le he', 'ce me']],
+  ['Horizontal joins', ['on om', 'ri vi', 'wi oy']],
+  ['Horizontal joins to tall letters', ['ol oh', 'ok wh', 'ob rt']],
+  ['Horizontal joins over the top', ['oa oc', 'od wa', 'ro oo']],
+  ['Horizontal joins to e', ['oe re', 've we', 'one were']],
+];
+const JOINED_WORDS = ['the and', 'can will', 'come here', 'look down', 'went into', 'all little',
+  'make like', 'have some', 'what when', 'then them', 'one two', 'help me'];
+
 const FAMILIES = [
   ['Anticlockwise letters', 'cadgoqesf'],
   ['Down and flick letters', 'iltjuy'],
@@ -203,7 +221,10 @@ const FAMILIES = [
 const r = n => Math.round(n*100)/100;
 const INK = '#2b3446', TRACE = '#a3acbb', ARROW = '#e0453a', ARROW_SOFT = '#ef8a80', START = '#1f9d55';
 
-function bounds(g){
+const G = ch => typeof ch === 'string' ? GLYPHS[ch] : ch;
+
+function bounds(ch){
+  const g = G(ch);
   let lo=Infinity, hi=-Infinity;
   for(const st of g) for(const s of st){ for(const p of (s.dot ? [s.dot] : s.pts)){ lo=Math.min(lo,p[0]); hi=Math.max(hi,p[0]); } }
   return [lo, hi];
@@ -236,7 +257,7 @@ function arrowHead(s){
 
 // one glyph in its own units. kind: 'model' (solid ink) or 'trace'
 function glyphSVG(ch, kind, o){
-  const g = GLYPHS[ch]; if(!g) return '';
+  const g = G(ch); if(!g) return '';
   const model = kind === 'model', col = model ? INK : TRACE;
   const dash = !model && o.trace === 'dots';
   let ink = '', arrows = '', starts = '';
@@ -245,7 +266,7 @@ function glyphSVG(ch, kind, o){
     labels.push([x,y]); starts += `<text x="${r(x)}" y="${r(y)}">${n}</text>`;
   };
   g.forEach((st, i) => {
-    const num = g.length > 1 && model && o.dots;
+    const num = g.length > 1 && model && o.dots && !g.word;
     if(st[0].dot){
       const [x,y] = st[0].dot;
       ink += `<circle cx="${x}" cy="${y}" r="${dash ? .75 : .9}" fill="${col}"/>`;
@@ -270,11 +291,51 @@ function glyphSVG(ch, kind, o){
 
 // place a glyph: x in mm, top = row top in mm, Z = height of one third in mm
 function placeGlyph(ch, x, top, Z, kind, o){
-  const [lo] = bounds(GLYPHS[ch]), s = Z/10;
+  const [lo] = bounds(ch), s = Z/10;
   const skew = o.slant ? ' translate(0 20) skewX(-5) translate(0 -20)' : '';
   return `<g transform="translate(${r(x)} ${r(top)}) scale(${r(s)})${skew} translate(${r(-lo)} 0)">${glyphSVG(ch, kind, o)}</g>`;
 }
-const advance = ch => { const [lo,hi] = bounds(GLYPHS[ch]); return hi - lo; };   // in units
+const advance = ch => { const [lo,hi] = bounds(ch); return hi - lo; };   // in units
+
+/* ===== Joined writing =====
+   A word becomes one glyph: each letter's main stroke is linked to the next
+   letter's start by a join stroke, and dots, crossbars and second strokes are
+   added after the word, the way they're written. Letters outside these two
+   sets (b f g j p q s x y z, capitals) end with a pen lift. */
+const JOIN_DIAGONAL = 'acdehiklmntu', JOIN_HORIZONTAL = 'orvw';
+const shift = (st, dx) => st.map(s => s.dot ? {...s, dot:[s.dot[0]+dx, s.dot[1]]} : {...s, pts: s.pts.map(([x,y]) => [x+dx, y])});
+
+function joinWord(word){
+  const main = [], lifts = [];
+  let cur = null, prev = null;
+  for(const c of [...word].filter(c => GLYPHS[c])){
+    const g = GLYPHS[c], [lo, hi] = bounds(c), first = g[0], S = first[0].pts[0];
+    let dx;
+    if(prev && /[a-z]/.test(c) && (JOIN_DIAGONAL + JOIN_HORIZONTAL).includes(prev.c)){
+      const E = prev.end, flat = JOIN_HORIZONTAL.includes(prev.c);
+      // where the join lands decides its shape: the middle line, up a tall letter,
+      // over the top of an anticlockwise letter, or into the bar of e
+      const kind = 'acdgoqs'.includes(c) ? 'over' : c === 'e' ? 'e' : S[1] < 9 ? 'tall' : 'top';
+      const span = {top:4, tall:3.2, over:0, e:3.4}[kind];
+      dx = Math.max(E[0] + span - S[0], E[0] + 2.2 - lo, prev.right + 1.6 - lo);
+      const to = [S[0]+dx, S[1]], d = flat ? [1,0] : prev.dir, reach = kind === 'over' && !flat ? 4 : 2;
+      const k = {top:[-1.5, flat ? -.2 : 1.5], tall:[-.8,4], over:[-3.4,-1.4], e: flat ? [-2,-.6] : [-1.8,.4]}[kind];
+      // in a word the arrows go on the joins; the letters keep theirs only on the first one
+      cur.push(B(E, [E[0]+d[0]*reach, E[1]+d[1]*reach], [to[0]+k[0], to[1]+k[1]], to, {arrow:.45}),
+        ...shift(first, dx).map(s => ({...s, arrow:false})));
+    } else {
+      dx = prev ? prev.right + 2.5 - lo : -lo;
+      cur = prev ? shift(first, dx).map(s => ({...s, arrow:false})) : shift(first, dx);
+      main.push(cur);
+    }
+    for(const st of g.slice(1)) lifts.push(shift(st, dx));
+    const pts = cur[cur.length-1].pts, end = pts[pts.length-1], before = pts[pts.length-2];
+    const len = Math.hypot(end[0]-before[0], end[1]-before[1]) || 1;
+    prev = {c, end, dir:[(end[0]-before[0])/len, (end[1]-before[1])/len], right: hi + dx};
+  }
+  const g = [...main, ...lifts]; g.word = true;
+  return g;
+}
 
 function guides(x0, x1, top, Z, o){
   const solid = `stroke="#8d97a8" stroke-width="0.3"`, dotted = `stroke="#a7b0bf" stroke-width="0.3" stroke-dasharray="0.7 1.3"`;
@@ -285,19 +346,20 @@ function guides(x0, x1, top, Z, o){
 
 // a trace row: the unit (letter or word) repeated to fill the row, the first one solid as a model
 function traceRow(unit, x0, x1, top, Z, o){
-  const s = Z/10, words = unit.trim().split(/\s+/).map(w => [...w].filter(c => GLYPHS[c]));
+  const s = Z/10, words = unit.trim().split(/\s+/).map(w => [...w].filter(c => GLYPHS[c]))
+    .map(w => o.joined && w.length > 1 ? [joinWord(w.join(''))] : w);
   const single = words.length === 1 && words[0].length === 1;
-  const letterGap = single ? 4.5 : 2.2, wordGap = 7.5;
-  let x = x0 + 3*s, out = '', first = true, placed = 0;
+  const letterGap = single ? 4.5 : 2.2, wordGap = o.joined ? 11 : 7.5;
+  let x = x0 + 3*s, out = '', placed = 0;
   for(let rep=0; rep<40; rep++){
     for(const w of words){
       if(!w.length) continue;
       const width = w.reduce((t,c) => t + advance(c), 0) + letterGap*(w.length-1);
       if(x + width*s > x1 - 2*s && placed) return out;
-      const kind = first ? 'model' : 'trace';
-      const opt = {...o, showArrows: o.arrows === 'all' || (o.arrows === 'model' && first)};
+      const kind = rep === 0 ? 'model' : 'trace';   // each word is modelled once
+      const opt = {...o, showArrows: o.arrows === 'all' || (o.arrows === 'model' && rep === 0)};
       for(const c of w){ out += placeGlyph(c, x, top, Z, kind, opt); x += (advance(c) + letterGap)*s; }
-      x += (wordGap - letterGap)*s; first = false; placed++;
+      x += (wordGap - letterGap)*s; placed++;
     }
   }
   return out;
@@ -308,7 +370,7 @@ const W = 210, H = 297, MX = 14, TOP = 42, BOTTOM = 286;
 
 function header(sheet, o){
   let s = `<text x="${MX}" y="16" font-size="3.3" font-weight="800" fill="#7a8699" letter-spacing="0.5">VICTORIAN MODERN CURSIVE</text>`
-    + `<text x="${MX}" y="26" font-size="8" font-weight="900" fill="${INK}">${esc(sheet.title)}</text>`;
+    + `<text x="${MX}" y="26" font-size="${r(Math.min(8, 195/sheet.title.length))}" font-weight="900" fill="${INK}">${esc(sheet.title)}</text>`;
   if(sheet.sub) s += `<text x="${MX}" y="33" font-size="4.2" font-weight="700" fill="#5b6b80">${esc(sheet.sub)}</text>`;
   const nx = sheet.big ? 112 : 128, ne = sheet.big ? 170 : 196;
   s += `<text x="${nx}" y="19" font-size="3.6" font-weight="700" fill="#5b6b80">Name</text><line x1="${nx+11}" y1="19.5" x2="${ne}" y2="19.5" stroke="#8d97a8" stroke-width="0.3"/>`
@@ -352,6 +414,8 @@ function sheets(mode, n){
     case 'upper-page': return perLetter(upper, 'Capital');
     case 'upper-all':  return [{title: 'Capital letters', sub: 'A to Z', rows: [...upper]}];
     case 'digits':     return [{title: 'Numbers', sub: '0 to 9', rows: [...'0123456789']}];
+    case 'joins':      return JOIN_GROUPS.map(([title, rows]) => ({title, sub: rows.join('  '), rows}));
+    case 'joined-words': return [{title: 'Joined words', rows: JOINED_WORDS}];
     case 'custom': {
       const rows = $('custom').value.split('\n').map(l => l.trim()).filter(l => [...l].some(c => GLYPHS[c]));
       return [{title: 'Handwriting practice', rows: rows.length ? rows : ['a']}];
@@ -362,8 +426,9 @@ function sheets(mode, n){
 const $ = id => document.getElementById(id);
 function render(){
   const o = {Z: +$('size').value, trace: $('trace').value, arrows: $('arrows').value,
-    dots: $('dots').checked, slant: $('slant').checked, shade: $('shade').checked};
-  $('custom-wrap').hidden = $('mode').value !== 'custom';
+    dots: $('dots').checked, slant: $('slant').checked, shade: $('shade').checked,
+    joined: $('mode').value.startsWith('join') || ($('mode').value === 'custom' && $('join').checked)};
+  $('custom-wrap').hidden = $('join-wrap').hidden = $('mode').value !== 'custom';
   const {n} = layout(o.Z), pages = [];
   for(const sh of sheets($('mode').value, n)){
     for(let i=0; i<sh.rows.length; i+=n){
@@ -373,7 +438,7 @@ function render(){
   $('pages').innerHTML = pages.join('');
   $('count').textContent = pages.length === 1 ? '1 page' : pages.length + ' pages';
   try{ localStorage.setItem('hw-sheets', JSON.stringify({mode: $('mode').value, size: $('size').value, trace: o.trace,
-    arrows: o.arrows, dots: o.dots, slant: o.slant, shade: o.shade, custom: $('custom').value})); }catch(e){}
+    arrows: o.arrows, dots: o.dots, slant: o.slant, shade: o.shade, custom: $('custom').value, join: $('join').checked})); }catch(e){}
 }
 
 try{

@@ -20,8 +20,8 @@ Without them it still runs; it just can't be installed or work offline.
 `handwriting.html` makes printable Victorian Modern Cursive sheets: a row of
 letters to trace, with arrows and a green start dot showing the direction of
 each stroke, then an empty dotted-thirds row beneath to practise. Pick letter
-families, one page per letter, capitals, numbers or your own words, choose a
-size, and print (A4).
+families, one page per letter, capitals, numbers, joined letter pairs, joined
+words or your own words (joined or not), choose a size, and print (A4).
 
 Ready-to-print PDFs of the main sets are in `handwriting-sheets/`.
 
