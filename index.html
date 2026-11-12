@@ -2113,7 +2113,8 @@ function initReporting(){
     version:(tag && tag.getAttribute('data-version')) || '0-dev',
     env:/^(localhost|127\.|192\.168\.)/.test(location.hostname) || location.protocol==='file:' ? 'dev' : 'prod',
     button:false,                   // the 💬 Send feedback button in Settings is the way in
-    ignore:[/ResizeObserver/],      // harmless browser noise
+    ignore:[/ResizeObserver/,       // harmless browser noise
+            /failed to load: static\.cloudflareinsights\.com\//],   // Cloudflare's injected analytics beacon; ad blockers stop it
     context:()=>({
       appVersion: APP_VERSION,
       storage: storageKind(),
