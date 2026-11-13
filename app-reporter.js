@@ -185,6 +185,7 @@
     if (/^Script error\.?$/.test(msg)) return true;                         // cross-origin script, no details
     if (/ResizeObserver loop/.test(msg)) return true;                       // harmless browser noise
     if (/(chrome|moz|safari(-web)?)-extension:\/\//.test(stack)) return true; // someone's browser extension
+    if (/cloudflareinsights\.com\/beacon/.test(msg)) return true;           // Cloudflare's analytics, added by the host; blockers stop it
     for (var i = 0; i < cfg.ignore.length; i++) {
       var r = cfg.ignore[i];
       if (typeof r === "string" ? msg.indexOf(r) >= 0 : r.test(msg)) return true;
